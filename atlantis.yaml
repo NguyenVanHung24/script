@@ -54,19 +54,17 @@ workflows:
             terraform validate
             echo "Validation passed."
 
-        # ── Step 3: KICS security scan ───────────────────────────────────────
-        # KICS (Keeping Infrastructure as Code Secure) statically analyzes
-        # Terraform files and flags misconfigurations against 2,000+ built-in
-        # security + compliance queries (CIS, NIST, PCI DSS, HIPAA, etc.).
+        # ── Step 3: tfsec security scan ────────────────────────────────────────
+        # tfsec (by Aqua Security) statically analyzes Terraform files for
+        # misconfigurations against 150+ built-in security checks covering
+        # AWS, Azure, GCP, and common IaC mistakes.
         - run: |
-            echo "=== [3/4] KICS security scan ==="
-            kics scan \
-              -p . \                       # -p: path to scan (repo root)
-              --no-progress \              # hide the animated progress bar (cleaner logs)
-              --type Terraform \           # only run Terraform queries, skip Docker/K8s etc.
-              --ignore-on-exit results     # exit 0 even when findings exist (soft-fail)
-                                           # → remove this line to BLOCK the plan on findings
-            echo "KICS scan complete."
+            echo "=== [3/4] tfsec security scan ==="
+            tfsec . \
+              --no-color \          # plain text output (no ANSI colors in PR comments)
+              --soft-fail           # exit 0 even when findings exist (soft-fail)
+                                    # → remove --soft-fail to BLOCK the plan on findings
+            echo "tfsec scan complete."
 
         # ── Step 4a: terraform init ───────────────────────────────────────────
         # Atlantis built-in: runs `terraform init` to download providers/modules.

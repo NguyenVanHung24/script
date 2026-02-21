@@ -30,11 +30,8 @@ repos:
       # regardless of which workflow the repo uses.
       # Useful for org-wide scanning that can't be bypassed by individual repos.
       - run: |
-          echo "=== [Server-hook] KICS security scan ==="
-          kics scan \
-            -p "$BASE_REPO_DIR" \   # $BASE_REPO_DIR = absolute path where Atlantis cloned the repo
-            --no-progress \         # suppress animated progress bar in logs
-            --type Terraform \      # only run Terraform-specific queries
-            --ignore-on-exit results  # soft-fail: report findings but don't block the plan
-          # The trailing `|| true` is a safety net in case kics itself crashes unexpectedly
-          true
+          echo "=== [Server-hook] tfsec security scan ==="
+          tfsec "$BASE_REPO_DIR" \
+            --no-color \      # plain text (readable in Atlantis logs)
+            --soft-fail       # report findings but never block the workflow
+          echo "tfsec scan complete."
