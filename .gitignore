@@ -1,3 +1,4 @@
 atlantis-data/
 docker-compose.yml
 instructin.md
+.terraform/
