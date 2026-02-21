@@ -1,79 +1,85 @@
-version: 3
+# ─────────────────────────────────────────────────────────────────────────────
+# atlantis.yaml — Repo-level Atlantis configuration
+#
+# This file lives INSIDE the repository and tells Atlantis:
+#   • Which directories/workspaces are "projects"
+#   • Which workflow each project should follow
+#   • What security gates must pass before `atlantis apply` is allowed
+# ─────────────────────────────────────────────────────────────────────────────
+version: 3   # Schema version — always 3 for current Atlantis
 
-# ---------------------------------------------------------------------------
-# Project definitions
-# Each project maps a directory to a named workflow.
-# apply_requirements ensures a human approves before Terraform applies.
-# ---------------------------------------------------------------------------
+# ─── PROJECTS ────────────────────────────────────────────────────────────────
+# A project = one Terraform root module that Atlantis manages.
+# You can have many projects (one per subdirectory, workspace, etc.)
 projects:
-  - name: alantis-demo
-    dir: .
-    workspace: default
-    workflow: validate-scan-plan
+  - name: alantis-demo            # Friendly label shown in PR comments
+    dir: .                        # Relative path to the Terraform root (. = repo root)
+    workspace: default            # Terraform workspace name
+    workflow: validate-scan-plan  # Which workflow block below to use for this project
     apply_requirements:
-      - approved          # PR must be approved before atlantis apply
-    autoplan:
+      - approved                  # A reviewer MUST approve the PR before `atlantis apply` runs
+    autoplan:                     # Automatically run `plan` when a PR is opened/updated
       when_modified:
-        - "*.tf"
-        - "*.tfvars"
-        - "atlantis.yaml"
-      enabled: true
+        - "*.tf"          # Re-plan when any .tf file changes
+        - "*.tfvars"      # Re-plan when variable files change
+        - "atlantis.yaml" # Re-plan when this config itself changes
+      enabled: true       # Turn autoplan on (set false to require manual `atlantis plan`)
 
-# ---------------------------------------------------------------------------
-# Workflow: validate-scan-plan
-#
-# Plan phase steps (executed in order):
-#   1. terraform fmt -check     → fail if code is not properly formatted
-#   2. terraform validate       → syntax + internal consistency check
-#   3. checkov (KICS-style)     → security & compliance scan
-#        --soft-fail keeps the output visible but does NOT block the plan.
-#        Remove --soft-fail to make Checkov failures block the plan.
-#   4. init                     → standard atlantis init step
-#   5. plan                     → standard atlantis plan step
-#
-# Apply phase steps:
-#   1. apply                    → standard atlantis apply step
-# ---------------------------------------------------------------------------
+# ─── WORKFLOWS ───────────────────────────────────────────────────────────────
+# A workflow defines the exact steps that run for `plan` and `apply`.
+# Steps run in order; if any step exits non-zero the whole workflow fails.
+# Built-in steps (init, plan, apply) are Atlantis built-ins.
+# `run:` steps are raw shell commands executed inside the cloned repo directory.
+# ─────────────────────────────────────────────────────────────────────────────
 workflows:
-  validate-scan-plan:
-    plan:
+  validate-scan-plan:   # Must match the `workflow:` field in the project above
+    plan:               # Steps that run when `atlantis plan` is triggered
       steps:
-        # ── Formatting check ────────────────────────────────────────────────
+
+        # ── Step 1: Formatting check ──────────────────────────────────────────
+        # `terraform fmt -check` reads every .tf file and verifies it matches
+        # canonical HCL formatting. It does NOT rewrite files — it only reports.
+        # Exit code 1 if any file is unformatted → blocks the plan.
         - run: |
             echo "=== [1/4] Terraform format check ==="
-            terraform fmt -check -recursive .
+            terraform fmt -check -recursive .   # -recursive: also check subdirectories
             echo "Format check passed."
 
-        # ── Built-in validation ──────────────────────────────────────────────
+        # ── Step 2: Terraform validate ───────────────────────────────────────
+        # `terraform validate` checks that all HCL syntax is correct and that
+        # references between resources are internally consistent.
+        # It does NOT call the cloud API — purely local, no credentials needed.
         - run: |
             echo "=== [2/4] Terraform validate ==="
             terraform validate
             echo "Validation passed."
 
-        # ── KICS security scan ───────────────────────────────────────────────────
-        # KICS (Keeping Infrastructure as Code Secure) scans Terraform files
-        # for misconfigurations, security issues, and compliance violations.
-        # Key flags:
-        #   -p .                 : path to scan (current directory)
-        #   --no-progress        : suppress progress bar for clean CI output
-        #   --report-formats cli : human-readable output in PR comments
-        #   --type Terraform     : only scan Terraform files
-        #   --ignore-on-exit results : exit 0 even when findings exist (soft-fail)
-        #                            remove this flag to block the plan on findings
+        # ── Step 3: KICS security scan ───────────────────────────────────────
+        # KICS (Keeping Infrastructure as Code Secure) statically analyzes
+        # Terraform files and flags misconfigurations against 2,000+ built-in
+        # security + compliance queries (CIS, NIST, PCI DSS, HIPAA, etc.).
         - run: |
             echo "=== [3/4] KICS security scan ==="
             kics scan \
-              -p . \
-              --no-progress \
-              --report-formats cli \
-              --type Terraform \
-              --ignore-on-exit results
+              -p . \                       # -p: path to scan (repo root)
+              --no-progress \              # hide the animated progress bar (cleaner logs)
+              --type Terraform \           # only run Terraform queries, skip Docker/K8s etc.
+              --ignore-on-exit results     # exit 0 even when findings exist (soft-fail)
+                                           # → remove this line to BLOCK the plan on findings
             echo "KICS scan complete."
 
-        # ── Terraform init + plan ────────────────────────────────────────────
+        # ── Step 4a: terraform init ───────────────────────────────────────────
+        # Atlantis built-in: runs `terraform init` to download providers/modules.
+        # Uses the provider cache mounted in the container for speed.
         - init
+
+        # ── Step 4b: terraform plan ───────────────────────────────────────────
+        # Atlantis built-in: runs `terraform plan` and posts the output as a
+        # PR comment so reviewers can see exactly what will change.
         - plan
 
-    apply:
+    apply:        # Steps that run when `atlantis apply` is triggered (after approval)
       steps:
+        # Atlantis built-in: runs `terraform apply` with the saved plan file.
+        # Only reachable after all `apply_requirements` (e.g., `approved`) are met.
         - apply

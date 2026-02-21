@@ -1,25 +1,40 @@
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 # repos.yaml — Atlantis SERVER-SIDE repository configuration
 #
-# This file is loaded by Atlantis at startup via --repo-config flag.
-# It grants repos permission to override the 'workflow' key in their
-# own atlantis.yaml, which is required for the custom validate-scan-plan
-# workflow defined in this repo.
-# =============================================================================
+# Loaded by Atlantis at startup via the ATLANTIS_REPO_CONFIG env var.
+# This file is the "admin layer" — it controls what individual repos are
+# ALLOWED to configure in their own atlantis.yaml files.
+#
+# Think of it as: repos.yaml = server operator policy
+#                 atlantis.yaml = per-repo developer config (within policy)
+# ─────────────────────────────────────────────────────────────────────────────
 
 repos:
-  - id: /.*/            # applies to all repositories
+  # id: regex that matches repository full names (org/repo).
+  # `/.*/` matches ALL repositories connected to this Atlantis instance.
+  - id: /.*/
+
     allowed_overrides:
-      - workflow        # lets repos define custom workflows in atlantis.yaml
-      - apply_requirements
-    allow_custom_workflows: true   # required when repos define their own workflow steps
+      # Without this list, repos cannot change these settings in atlantis.yaml.
+      # Each entry explicitly grants permission to override one setting.
+      - workflow          # repos may define their own custom workflow steps
+      - apply_requirements  # repos may set their own approval gates
+
+    # allow_custom_workflows: must be true for repos to use `run:` shell steps.
+    # When false, repos can only use Atlantis built-in steps (init/plan/apply).
+    allow_custom_workflows: true
+
     pre_workflow_hooks:
-      # Run KICS as a server-side pre-hook so it scans every repo
+      # pre_workflow_hooks run BEFORE the repo's own workflow steps.
+      # They run on the Atlantis server for EVERY plan or apply event,
+      # regardless of which workflow the repo uses.
+      # Useful for org-wide scanning that can't be bypassed by individual repos.
       - run: |
           echo "=== [Server-hook] KICS security scan ==="
           kics scan \
-            -p "$BASE_REPO_DIR" \
-            --no-progress \
-            --report-formats cli \
-            --type Terraform \
-            --ignore-on-exit results || true
+            -p "$BASE_REPO_DIR" \   # $BASE_REPO_DIR = absolute path where Atlantis cloned the repo
+            --no-progress \         # suppress animated progress bar in logs
+            --type Terraform \      # only run Terraform-specific queries
+            --ignore-on-exit results  # soft-fail: report findings but don't block the plan
+          # The trailing `|| true` is a safety net in case kics itself crashes unexpectedly
+          true
