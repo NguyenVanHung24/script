@@ -14,12 +14,12 @@ repos:
       - apply_requirements
     allow_custom_workflows: true   # required when repos define their own workflow steps
     pre_workflow_hooks:
-      # Run Checkov as a server-side pre-hook so it runs for every repo,
-      # even those that don't have a custom workflow.
+      # Run KICS as a server-side pre-hook so it scans every repo
       - run: |
-          echo "=== [Server-hook] Checkov security scan ==="
-          checkov -d "$BASE_REPO_DIR" \
-            --quiet \
-            --compact \
-            --framework terraform \
-            --soft-fail || true
+          echo "=== [Server-hook] KICS security scan ==="
+          kics scan \
+            -p "$BASE_REPO_DIR" \
+            --no-progress \
+            --report-formats cli \
+            --type Terraform \
+            --ignore-on-exit results || true

@@ -50,26 +50,25 @@ workflows:
             terraform validate
             echo "Validation passed."
 
-        # ── Checkov security scan ────────────────────────────────────────────
-        # Checkov scans all .tf files in the current directory.
+        # ── KICS security scan ───────────────────────────────────────────────────
+        # KICS (Keeping Infrastructure as Code Secure) scans Terraform files
+        # for misconfigurations, security issues, and compliance violations.
         # Key flags:
-        #   -d .            : scan current directory
-        #   --quiet         : suppress passing checks, show only failures
-        #   --compact       : condensed output (one line per finding)
-        #   --framework terraform : scan Terraform HCL only
-        #   --soft-fail     : exit 0 even when violations found (remove to block)
-        # Severity thresholds (uncomment ONE of the lines below):
-        #   --check CKV_AWS_*            : only run AWS checks
-        #   --severity HIGH              : only report HIGH+ severity
+        #   -p .                 : path to scan (current directory)
+        #   --no-progress        : suppress progress bar for clean CI output
+        #   --report-formats cli : human-readable output in PR comments
+        #   --type Terraform     : only scan Terraform files
+        #   --ignore-on-exit results : exit 0 even when findings exist (soft-fail)
+        #                            remove this flag to block the plan on findings
         - run: |
-            echo "=== [3/4] Checkov security scan ==="
-            checkov \
-              -d . \
-              --quiet \
-              --compact \
-              --framework terraform \
-              --soft-fail
-            echo "Checkov scan complete."
+            echo "=== [3/4] KICS security scan ==="
+            kics scan \
+              -p . \
+              --no-progress \
+              --report-formats cli \
+              --type Terraform \
+              --ignore-on-exit results
+            echo "KICS scan complete."
 
         # ── Terraform init + plan ────────────────────────────────────────────
         - init
