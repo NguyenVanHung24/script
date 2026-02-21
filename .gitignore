@@ -2,3 +2,14 @@ atlantis-data/
 docker-compose.yml
 instructin.md
 .terraform/
+# Ignore Terraform binaries
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Ignore crash logs
+crash.log
+
+# Ignore sensitive files (Excel keys, env)
+*.csv
+.env
