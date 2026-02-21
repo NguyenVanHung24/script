@@ -22,7 +22,7 @@ resource "aws_s3_bucket" "insecure_public_bucket" {
 }
 
 # [FINDING] CKV_AWS_19 — S3 bucket is not encrypted at rest
-# No server-side encryption configuration block → Checkov will flag this.
+# No server-side encryption configuration bfffflock → Checkov will flag this.
 
 # [FINDING] CKV_AWS_21 — S3 bucket versioning is not enabled
 # No versioning block → Checkov will flag this.
