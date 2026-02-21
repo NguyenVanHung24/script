@@ -1,0 +1,80 @@
+version: 3
+
+# ---------------------------------------------------------------------------
+# Project definitions
+# Each project maps a directory to a named workflow.
+# apply_requirements ensures a human approves before Terraform applies.
+# ---------------------------------------------------------------------------
+projects:
+  - name: alantis-demo
+    dir: .
+    workspace: default
+    workflow: validate-scan-plan
+    apply_requirements:
+      - approved          # PR must be approved before atlantis apply
+    autoplan:
+      when_modified:
+        - "*.tf"
+        - "*.tfvars"
+        - "atlantis.yaml"
+      enabled: true
+
+# ---------------------------------------------------------------------------
+# Workflow: validate-scan-plan
+#
+# Plan phase steps (executed in order):
+#   1. terraform fmt -check     → fail if code is not properly formatted
+#   2. terraform validate       → syntax + internal consistency check
+#   3. checkov (KICS-style)     → security & compliance scan
+#        --soft-fail keeps the output visible but does NOT block the plan.
+#        Remove --soft-fail to make Checkov failures block the plan.
+#   4. init                     → standard atlantis init step
+#   5. plan                     → standard atlantis plan step
+#
+# Apply phase steps:
+#   1. apply                    → standard atlantis apply step
+# ---------------------------------------------------------------------------
+workflows:
+  validate-scan-plan:
+    plan:
+      steps:
+        # ── Formatting check ────────────────────────────────────────────────
+        - run: |
+            echo "=== [1/4] Terraform format check ==="
+            terraform fmt -check -recursive .
+            echo "Format check passed."
+
+        # ── Built-in validation ──────────────────────────────────────────────
+        - run: |
+            echo "=== [2/4] Terraform validate ==="
+            terraform validate
+            echo "Validation passed."
+
+        # ── Checkov security scan ────────────────────────────────────────────
+        # Checkov scans all .tf files in the current directory.
+        # Key flags:
+        #   -d .            : scan current directory
+        #   --quiet         : suppress passing checks, show only failures
+        #   --compact       : condensed output (one line per finding)
+        #   --framework terraform : scan Terraform HCL only
+        #   --soft-fail     : exit 0 even when violations found (remove to block)
+        # Severity thresholds (uncomment ONE of the lines below):
+        #   --check CKV_AWS_*            : only run AWS checks
+        #   --severity HIGH              : only report HIGH+ severity
+        - run: |
+            echo "=== [3/4] Checkov security scan ==="
+            checkov \
+              -d . \
+              --quiet \
+              --compact \
+              --framework terraform \
+              --soft-fail
+            echo "Checkov scan complete."
+
+        # ── Terraform init + plan ────────────────────────────────────────────
+        - init
+        - plan
+
+    apply:
+      steps:
+        - apply
