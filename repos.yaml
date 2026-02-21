@@ -1,37 +1,22 @@
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # repos.yaml — Atlantis SERVER-SIDE repository configuration
 #
-# Loaded by Atlantis at startup via the ATLANTIS_REPO_CONFIG env var.
-# This file is the "admin layer" — it controls what individual repos are
-# ALLOWED to configure in their own atlantis.yaml files.
+# This is the "admin layer" — controls what repos are allowed to configure
+# in their own atlantis.yaml files.
 #
-# Think of it as: repos.yaml = server operator policy
-#                 atlantis.yaml = per-repo developer config (within policy)
-# ─────────────────────────────────────────────────────────────────────────────
+# repos.yaml = server operator policy
+# atlantis.yaml = per-repo developer config (within policy)
+# =============================================================================
 
 repos:
-  # id: regex that matches repository full names (org/repo).
-  # `/.*/` matches ALL repositories connected to this Atlantis instance.
+  # Applies to ALL repositories connected to this Atlantis instance.
   - id: /.*/
 
     allowed_overrides:
-      # Without this list, repos cannot change these settings in atlantis.yaml.
-      # Each entry explicitly grants permission to override one setting.
-      - workflow          # repos may define their own custom workflow steps
+      - workflow            # repos may define custom workflow names
       - apply_requirements  # repos may set their own approval gates
 
-    # allow_custom_workflows: must be true for repos to use `run:` shell steps.
-    # When false, repos can only use Atlantis built-in steps (init/plan/apply).
+    # Must be true for repos to use `run:` shell steps in workflows.
     allow_custom_workflows: true
 
-    pre_workflow_hooks:
-      # pre_workflow_hooks run BEFORE the repo's own workflow steps.
-      # They run on the Atlantis server for EVERY plan or apply event,
-      # regardless of which workflow the repo uses.
-      # Useful for org-wide scanning that can't be bypassed by individual repos.
-      - run: |
-          echo "=== [Server-hook] tfsec security scan ==="
-          tfsec "$BASE_REPO_DIR" \
-            --no-color \      # plain text (readable in Atlantis logs)
-            --soft-fail       # report findings but never block the workflow
-          echo "tfsec scan complete."
+    # No pre_workflow_hooks — scanning is handled per-project in atlantis.yaml
