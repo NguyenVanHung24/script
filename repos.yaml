@@ -1,0 +1,25 @@
+# =============================================================================
+# repos.yaml — Atlantis SERVER-SIDE repository configuration
+#
+# This file is loaded by Atlantis at startup via --repo-config flag.
+# It grants repos permission to override the 'workflow' key in their
+# own atlantis.yaml, which is required for the custom validate-scan-plan
+# workflow defined in this repo.
+# =============================================================================
+
+repos:
+  - id: /.*/            # applies to all repositories
+    allowed_overrides:
+      - workflow        # lets repos define custom workflows in atlantis.yaml
+      - apply_requirements
+    allow_custom_workflows: true   # required when repos define their own workflow steps
+    pre_workflow_hooks:
+      # Run Checkov as a server-side pre-hook so it runs for every repo,
+      # even those that don't have a custom workflow.
+      - run: |
+          echo "=== [Server-hook] Checkov security scan ==="
+          checkov -d "$BASE_REPO_DIR" \
+            --quiet \
+            --compact \
+            --framework terraform \
+            --soft-fail || true
