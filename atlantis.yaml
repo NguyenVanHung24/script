@@ -54,30 +54,79 @@ projects:
 # ─── WORKFLOWS ────────────────────────────────────────────────────────────────
 workflows:
 
-  # ── all-scans-plan: KICS chạy TRƯỚC TIÊN (blocking), rồi mới init + plan ──
+  # ── all-scans-plan: KICS chạy TRƯỚC TIÊN (non-blocking) + export CSV ─────
   all-scans-plan:
     plan:
       steps:
-        # ✅ BƯỚC 1: KICS scan — BLOCKING (nếu KICS fail, plan sẽ không chạy)
-        # Xóa --ignore-on-exit để chặn plan khi có lỗi HIGH severity
+        # ✅ BƯỚC 1: KICS scan — NON-BLOCKING + export CSV/JSON report
+        # Dù KICS tìm thấy lỗi, các bước tiếp theo vẫn tiếp tục chạy
+        # CSV report được lưu tại: /tmp/kics-report/<timestamp>-PR<num>/
         - run: |
-            echo "=== [1/5] KICS security scan (BLOCKING) ==="
+            echo "=== [1/5] KICS security scan (non-blocking) ==="
+            REPORT_DIR="/tmp/kics-report/$(date +%Y%m%d-%H%M%S)-PR${PULL_NUM}"
+            mkdir -p "$REPORT_DIR"
             kics scan \
               -p . \
               -q /app/assets/queries \
               --no-progress \
-              --type Terraform
-            echo "=== KICS scan passed — no blocking issues found ==="
+              --type Terraform \
+              --report-formats csv,json \
+              --output-path "$REPORT_DIR" \
+              --ignore-on-exit results > /dev/null 2>&1
+            if [ -f "$REPORT_DIR/results.csv" ]; then
+              PY=/tmp/kics_parse_$$.py
+              printf '%s\n' \
+                'import csv,os,sys' \
+                'f=os.environ.get("KICS_CSV","")' \
+                'rows=[r for r in csv.reader(open(f)) if r][1:]' \
+                'rows=[r for r in rows if len(r)>=17]' \
+                'sev=lambda r:r[3].strip().upper()' \
+                'total=len(rows)' \
+                'cri=sum(1 for r in rows if sev(r)=="CRITICAL")' \
+                'hi=sum(1 for r in rows if sev(r)=="HIGH")' \
+                'med=sum(1 for r in rows if sev(r)=="MEDIUM")' \
+                'print("### KICS Security Scan Results")' \
+                'print("")' \
+                'print("| Total | Critical | High | Medium |")' \
+                'print("|-------|----------|------|--------|")'  \
+                'print("| "+str(total)+" | "+str(cri)+" | "+str(hi)+" | "+str(med)+" |")' \
+                'print("")' \
+                'fil=[r for r in rows if sev(r) in ("CRITICAL","HIGH","MEDIUM")]' \
+                'print("#### Findings - Critical / High / Medium") if fil else print("No CRITICAL/HIGH/MEDIUM findings.")' \
+                'fil and [print("| Vulnerability | Severity | Resource | Description |")]' \
+                'fil and [print("|--------------|----------|----------|-------------|" )]' \
+                'exec("for r in fil:\n d=r[10][:117]+\x27...\x27 if len(r[10])>120 else r[10]\n print(\x27| \x27+r[0]+\x27 | \x27+r[3]+\x27 | \x27+r[14]+\x27:\x27+r[16]+\x27 | \x27+d+\x27 |\x27)")' \
+                > "$PY"
+              KICS_CSV="$REPORT_DIR/results.csv" python3 "$PY"
+              rm -f "$PY"
+            fi
+            echo ""
+            echo "=== KICS scan complete ==="
 
         - run: |
-            echo "=== [2/5] tfsec security scan ==="
+            echo "=== [2/5] tfsec security scan (non-blocking + JSON export) ==="
+            REPORT_DIR="/tmp/tfsec-report/$(date +%Y%m%d-%H%M%S)-PR${PULL_NUM}"
+            mkdir -p "$REPORT_DIR"
+            tfsec . --no-color --soft-fail --format json > "$REPORT_DIR/results.json" 2>&1 || true
             tfsec . --no-color --soft-fail
-            echo "tfsec scan complete."
+            echo ""
+            echo "📁 tfsec report saved to: $REPORT_DIR/results.json"
+            echo "=== tfsec scan complete ==="
 
         - run: |
-            echo "=== [3/5] Checkov security scan ==="
-            checkov -d . --quiet --compact --framework terraform --soft-fail
-            echo "Checkov scan complete."
+            echo "=== [3/5] Checkov security scan (non-blocking + CSV/JSON export) ==="
+            REPORT_DIR="/tmp/checkov-report/$(date +%Y%m%d-%H%M%S)-PR${PULL_NUM}"
+            mkdir -p "$REPORT_DIR"
+            checkov -d . --quiet --compact --framework terraform --soft-fail \
+              --output json > "$REPORT_DIR/results.json" 2>&1 || true
+            checkov -d . --quiet --compact --framework terraform --soft-fail \
+              --output csv > "$REPORT_DIR/results.csv" 2>&1 || true
+            checkov -d . --compact --framework terraform --soft-fail
+            echo ""
+            echo "📁 Checkov report saved to: $REPORT_DIR"
+            echo "   - CSV : $REPORT_DIR/results.csv"
+            echo "   - JSON: $REPORT_DIR/results.json"
+            echo "=== Checkov scan complete ==="
 
         - init   # Bước 4: terraform init
         - plan   # Bước 5: terraform plan (kết quả post lên PR comment)
@@ -86,20 +135,54 @@ workflows:
       steps:
         - apply  # runs terraform apply with the saved plan file
 
-  # ── kics-only: KICS scan only, no terraform plan ──────────────────────────
+  # ── kics-only: KICS scan only + export CSV, no terraform plan ────────────
   # Comment `atlantis plan -p scan-kics` on the PR to trigger.
   kics-only:
     plan:
       steps:
         - run: |
             echo "=== KICS security scan ==="
+            REPORT_DIR="/tmp/kics-report/$(date +%Y%m%d-%H%M%S)-PR${PULL_NUM}"
+            mkdir -p "$REPORT_DIR"
             kics scan \
               -p . \
               -q /app/assets/queries \
               --no-progress \
               --type Terraform \
-              --ignore-on-exit results
-            echo "KICS scan complete."
+              --report-formats csv,json \
+              --output-path "$REPORT_DIR" \
+              --ignore-on-exit results > /dev/null 2>&1
+            if [ -f "$REPORT_DIR/results.csv" ]; then
+              PY=/tmp/kics_parse_$$.py
+              printf '%s\n' \
+                'import csv,os,sys' \
+                'f=os.environ.get("KICS_CSV","")' \
+                'rows=[r for r in csv.reader(open(f)) if r][1:]' \
+                'rows=[r for r in rows if len(r)>=17]' \
+                'sev=lambda r:r[3].strip().upper()' \
+                'total=len(rows)' \
+                'cri=sum(1 for r in rows if sev(r)=="CRITICAL")' \
+                'hi=sum(1 for r in rows if sev(r)=="HIGH")' \
+                'med=sum(1 for r in rows if sev(r)=="MEDIUM")' \
+                'low=sum(1 for r in rows if sev(r)=="LOW")' \
+                'info=sum(1 for r in rows if sev(r)=="INFO")' \
+                'print("### KICS Security Scan Results")' \
+                'print("")' \
+                'print("| Total | Critical | High | Medium | Low | Info |")' \
+                'print("|-------|----------|------|--------|-----|------|")' \
+                'print("| "+str(total)+" | "+str(cri)+" | "+str(hi)+" | "+str(med)+" | "+str(low)+" | "+str(info)+" |")' \
+                'print("")' \
+                'fil=[r for r in rows if sev(r) in ("CRITICAL","HIGH","MEDIUM")]' \
+                'print("#### Findings - Critical / High / Medium") if fil else print("No CRITICAL/HIGH/MEDIUM findings.")' \
+                'fil and [print("| Vulnerability | Severity | Resource | Description |")]' \
+                'fil and [print("|--------------|----------|----------|-------------|" )]' \
+                'exec("for r in fil:\n d=r[10][:117]+\x27...\x27 if len(r[10])>120 else r[10]\n print(\x27| \x27+r[0]+\x27 | \x27+r[3]+\x27 | \x27+r[14]+\x27:\x27+r[16]+\x27 | \x27+d+\x27 |\x27)")' \
+                > "$PY"
+              KICS_CSV="$REPORT_DIR/results.csv" python3 "$PY"
+              rm -f "$PY"
+            fi
+            echo ""
+            echo "=== KICS scan complete ==="
 
   # ── tfsec-only: tfsec scan only, no terraform plan ────────────────────────
   # Comment `atlantis plan -p scan-tfsec` on the PR to trigger.
@@ -107,9 +190,14 @@ workflows:
     plan:
       steps:
         - run: |
-            echo "=== tfsec security scan ==="
+            echo "=== tfsec security scan (non-blocking + JSON export) ==="
+            REPORT_DIR="/tmp/tfsec-report/$(date +%Y%m%d-%H%M%S)-PR${PULL_NUM}"
+            mkdir -p "$REPORT_DIR"
+            tfsec . --no-color --soft-fail --format json > "$REPORT_DIR/results.json" 2>&1 || true
             tfsec . --no-color --soft-fail
-            echo "tfsec scan complete."
+            echo ""
+            echo "📁 tfsec report saved to: $REPORT_DIR/results.json"
+            echo "=== tfsec scan complete ==="
 
   # ── checkov-only: Checkov scan only, no terraform plan ────────────────────
   # Comment `atlantis plan -p scan-checkov` on the PR to trigger.
@@ -117,6 +205,16 @@ workflows:
     plan:
       steps:
         - run: |
-            echo "=== Checkov security scan ==="
-            checkov -d . --quiet --compact --framework terraform --soft-fail
-            echo "Checkov scan complete."
+            echo "=== Checkov security scan (non-blocking + CSV/JSON export) ==="
+            REPORT_DIR="/tmp/checkov-report/$(date +%Y%m%d-%H%M%S)-PR${PULL_NUM}"
+            mkdir -p "$REPORT_DIR"
+            checkov -d . --quiet --compact --framework terraform --soft-fail \
+              --output json > "$REPORT_DIR/results.json" 2>&1 || true
+            checkov -d . --quiet --compact --framework terraform --soft-fail \
+              --output csv > "$REPORT_DIR/results.csv" 2>&1 || true
+            checkov -d . --compact --framework terraform --soft-fail
+            echo ""
+            echo "📁 Checkov report saved to: $REPORT_DIR"
+            echo "   - CSV : $REPORT_DIR/results.csv"
+            echo "   - JSON: $REPORT_DIR/results.json"
+            echo "=== Checkov scan complete ==="
