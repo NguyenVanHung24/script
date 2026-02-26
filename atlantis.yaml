@@ -62,7 +62,7 @@ workflows:
         # Dù KICS tìm thấy lỗi, các bước tiếp theo vẫn tiếp tục chạy
         # CSV report được lưu tại: /tmp/kics-report/<timestamp>-PR<num>/
         - run: |
-            echo "=== [1/5] KICS security scan (non-blocking + CSV export) ==="
+            echo "=== [1/5] KICS security scan (non-blocking) ==="
             REPORT_DIR="/tmp/kics-report/$(date +%Y%m%d-%H%M%S)-PR${PULL_NUM}"
             mkdir -p "$REPORT_DIR"
             kics scan \
@@ -72,19 +72,36 @@ workflows:
               --type Terraform \
               --report-formats csv,json \
               --output-path "$REPORT_DIR" \
-              --ignore-on-exit results
-            echo ""
-            echo "📁 Report saved to: $REPORT_DIR"
-            echo "   - CSV : $REPORT_DIR/results.csv"
-            echo "   - JSON: $REPORT_DIR/results.json"
-            echo ""
+              --ignore-on-exit results > /dev/null 2>&1
             if [ -f "$REPORT_DIR/results.csv" ]; then
               TOTAL=$(awk -F',' 'NR>1' "$REPORT_DIR/results.csv" | wc -l)
-              echo "🔍 Total findings: $TOTAL"
+              CRITICAL=$(awk -F',' 'NR>1 && toupper($4)=="CRITICAL"' "$REPORT_DIR/results.csv" | wc -l)
+              HIGH=$(awk -F',' 'NR>1 && toupper($4)=="HIGH"' "$REPORT_DIR/results.csv" | wc -l)
+              MED=$(awk -F',' 'NR>1 && toupper($4)=="MEDIUM"' "$REPORT_DIR/results.csv" | wc -l)
+              echo "### 🔐 KICS Security Scan Results"
               echo ""
-              echo "| Severity | Rule Name | File | Line |"
-              echo "|----------|-----------|------|------|"
-              awk -F',' 'NR>1 {printf "| %s | %s | %s | %s |\n", $5, $2, $7, $8}' "$REPORT_DIR/results.csv"
+              echo "| 📊 Total | 🔴 Critical | 🟠 High | 🟡 Medium |"
+              echo "|---------|------------|--------|----------|"
+              echo "| $TOTAL | $CRITICAL | $HIGH | $MED |"
+              echo ""
+              FILTERED=$(awk -F',' 'NR>1 && (toupper($4)=="CRITICAL" || toupper($4)=="HIGH" || toupper($4)=="MEDIUM")' "$REPORT_DIR/results.csv" | wc -l)
+              if [ "$FILTERED" -gt 0 ]; then
+                echo "#### ⚠️ Findings — Critical / High / Medium"
+                echo ""
+                echo "| Vulnerability | Severity | Resource | Description |"
+                echo "|--------------|----------|------------|-------------|"
+                awk -F',' 'NR>1 && (toupper($4)=="CRITICAL" || toupper($4)=="HIGH" || toupper($4)=="MEDIUM") {
+                  title=$1; sev=$4; file=$9; line=$10; desc=$7
+                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", title)
+                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", sev)
+                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", file)
+                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", line)
+                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", desc)
+                  printf "| %s | %s | %s:%s | %s |\n", title, sev, file, line, desc
+                }' "$REPORT_DIR/results.csv"
+              else
+                echo "✅ No CRITICAL / HIGH / MEDIUM findings."
+              fi
             fi
             echo ""
             echo "=== KICS scan complete ==="
@@ -127,7 +144,7 @@ workflows:
     plan:
       steps:
         - run: |
-            echo "=== KICS security scan + CSV export ==="
+            echo "=== KICS security scan ==="
             REPORT_DIR="/tmp/kics-report/$(date +%Y%m%d-%H%M%S)-PR${PULL_NUM}"
             mkdir -p "$REPORT_DIR"
             kics scan \
@@ -137,24 +154,40 @@ workflows:
               --type Terraform \
               --report-formats csv,json \
               --output-path "$REPORT_DIR" \
-              --ignore-on-exit results
-            echo ""
-            echo "📁 Report saved to: $REPORT_DIR"
-            echo "   - CSV : $REPORT_DIR/results.csv"
-            echo "   - JSON: $REPORT_DIR/results.json"
-            echo ""
+              --ignore-on-exit results > /dev/null 2>&1
             if [ -f "$REPORT_DIR/results.csv" ]; then
               TOTAL=$(awk -F',' 'NR>1' "$REPORT_DIR/results.csv" | wc -l)
-              HIGH=$(awk -F',' 'NR>1 && toupper($5)=="HIGH"' "$REPORT_DIR/results.csv" | wc -l)
-              MED=$(awk -F',' 'NR>1 && toupper($5)=="MEDIUM"' "$REPORT_DIR/results.csv" | wc -l)
-              LOW=$(awk -F',' 'NR>1 && toupper($5)=="LOW"' "$REPORT_DIR/results.csv" | wc -l)
-              INFO=$(awk -F',' 'NR>1 && toupper($5)=="INFO"' "$REPORT_DIR/results.csv" | wc -l)
-              echo "🔍 Summary: Total=$TOTAL | HIGH=$HIGH | MEDIUM=$MED | LOW=$LOW | INFO=$INFO"
+              CRITICAL=$(awk -F',' 'NR>1 && toupper($4)=="CRITICAL"' "$REPORT_DIR/results.csv" | wc -l)
+              HIGH=$(awk -F',' 'NR>1 && toupper($4)=="HIGH"' "$REPORT_DIR/results.csv" | wc -l)
+              MED=$(awk -F',' 'NR>1 && toupper($4)=="MEDIUM"' "$REPORT_DIR/results.csv" | wc -l)
+              LOW=$(awk -F',' 'NR>1 && toupper($4)=="LOW"' "$REPORT_DIR/results.csv" | wc -l)
+              INFO=$(awk -F',' 'NR>1 && toupper($4)=="INFO"' "$REPORT_DIR/results.csv" | wc -l)
+              echo "### 🔐 KICS Security Scan Results"
               echo ""
-              echo "| Severity | Rule Name | File | Line |"
-              echo "|----------|-----------|------|------|"
-              awk -F',' 'NR>1 {printf "| %s | %s | %s | %s |\n", $5, $2, $7, $8}' "$REPORT_DIR/results.csv"
+              echo "| 📊 Total | 🔴 Critical | 🟠 High | 🟡 Medium | 🔵 Low | ⚪ Info |"
+              echo "|---------|------------|--------|----------|-------|------|"
+              echo "| $TOTAL | $CRITICAL | $HIGH | $MED | $LOW | $INFO |"
+              echo ""
+              FILTERED=$(awk -F',' 'NR>1 && (toupper($4)=="CRITICAL" || toupper($4)=="HIGH" || toupper($4)=="MEDIUM")' "$REPORT_DIR/results.csv" | wc -l)
+              if [ "$FILTERED" -gt 0 ]; then
+                echo "#### ⚠️ Findings — Critical / High / Medium"
+                echo ""
+                echo "| Vulnerability | Severity | Resource | Description |"
+                echo "|--------------|----------|------------|-------------|"
+                awk -F',' 'NR>1 && (toupper($4)=="CRITICAL" || toupper($4)=="HIGH" || toupper($4)=="MEDIUM") {
+                  title=$1; sev=$4; file=$9; line=$10; desc=$7
+                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", title)
+                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", sev)
+                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", file)
+                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", line)
+                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", desc)
+                  printf "| %s | %s | %s:%s | %s |\n", title, sev, file, line, desc
+                }' "$REPORT_DIR/results.csv"
+              else
+                echo "✅ No CRITICAL / HIGH / MEDIUM findings."
+              fi
             fi
+            echo ""
             echo "=== KICS scan complete ==="
 
   # ── tfsec-only: tfsec scan only, no terraform plan ────────────────────────
