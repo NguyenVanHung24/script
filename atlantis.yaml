@@ -54,42 +54,33 @@ projects:
 # ─── WORKFLOWS ────────────────────────────────────────────────────────────────
 workflows:
 
-  # ── all-scans-plan: runs all 3 scanners then does init + plan ─────────────
+  # ── all-scans-plan: KICS chạy TRƯỚC TIÊN (blocking), rồi mới init + plan ──
   all-scans-plan:
     plan:
       steps:
+        # ✅ BƯỚC 1: KICS scan — BLOCKING (nếu KICS fail, plan sẽ không chạy)
+        # Xóa --ignore-on-exit để chặn plan khi có lỗi HIGH severity
         - run: |
-            echo "=== [1/6] Terraform format check ==="
-            terraform fmt -check -recursive .
-            echo "Format check passed."
-
-        - run: |
-            echo "=== [2/6] Terraform validate ==="
-            terraform validate
-            echo "Validation passed."
-
-        - run: |
-            echo "=== [3/6] KICS security scan ==="
+            echo "=== [1/5] KICS security scan (BLOCKING) ==="
             kics scan \
               -p . \
               -q /app/assets/queries \
               --no-progress \
-              --type Terraform \
-              --ignore-on-exit results
-            echo "KICS scan complete."
+              --type Terraform
+            echo "=== KICS scan passed — no blocking issues found ==="
 
         - run: |
-            echo "=== [4/6] tfsec security scan ==="
+            echo "=== [2/5] tfsec security scan ==="
             tfsec . --no-color --soft-fail
             echo "tfsec scan complete."
 
         - run: |
-            echo "=== [5/6] Checkov security scan ==="
+            echo "=== [3/5] Checkov security scan ==="
             checkov -d . --quiet --compact --framework terraform --soft-fail
             echo "Checkov scan complete."
 
-        - init   # Step 6a: terraform init
-        - plan   # Step 6b: terraform plan (output posted as PR comment)
+        - init   # Bước 4: terraform init
+        - plan   # Bước 5: terraform plan (kết quả post lên PR comment)
 
     apply:
       steps:

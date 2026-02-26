@@ -12,7 +12,7 @@
 # Checkov check: ensure S3 bucket does not have public-read or public-read-write ACL
 # -----------------------------------------------------------------------------
 resource "aws_s3_bucket" "insecure_public_bucket" {
-  bucket = "demoo-insewwcure-public-bucket"
+  bucket = "demooo-insewwcure-public-bucket"
   # BAD: exposes all objects to the internet
   acl    = "public-read"
 

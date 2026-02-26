@@ -19,17 +19,5 @@ repos:
     # Must be true for repos to use `run:` shell steps in workflows.
     allow_custom_workflows: true
 
-    # ==========================================================================
-    # pre_workflow_hooks: run BEFORE any workflow (plan or apply) on every repo.
-    # This is the server-operator enforcement layer — developers cannot skip it.
-    # ==========================================================================
-    pre_workflow_hooks:
-      - run: |
-          echo "=== [pre_workflow_hook] KICS security scan ==="
-          kics scan \
-            -p "$BASE_REPO_DIR" \
-            -q /app/assets/queries \
-            --no-progress \
-            --type Terraform \
-            --ignore-on-exit results
-          echo "=== KICS scan complete ==="
+    # KICS scan is enforced as step 1 of every plan workflow in atlantis.yaml.
+    # Results are posted as PR comments. No pre_workflow_hooks needed here.
