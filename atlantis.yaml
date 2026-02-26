@@ -74,47 +74,31 @@ workflows:
               --output-path "$REPORT_DIR" \
               --ignore-on-exit results > /dev/null 2>&1
             if [ -f "$REPORT_DIR/results.csv" ]; then
-              KICS_CSV="$REPORT_DIR/results.csv" python3 - <<'PYEOF'
-import csv, sys, os
-filepath = os.environ['KICS_CSV']
-rows = []
-try:
-    with open(filepath, newline='', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        next(reader)  # skip header
-        for r in reader:
-            if len(r) >= 17:
-                rows.append(r)
-except Exception as e:
-    print(f"Error reading CSV: {e}"); sys.exit(0)
-
-total = len(rows)
-critical = sum(1 for r in rows if r[3].strip().upper() == 'CRITICAL')
-high     = sum(1 for r in rows if r[3].strip().upper() == 'HIGH')
-med      = sum(1 for r in rows if r[3].strip().upper() == 'MEDIUM')
-print("### \U0001f510 KICS Security Scan Results")
-print("")
-print("| \U0001f4ca Total | \U0001f534 Critical | \U0001f7e0 High | \U0001f7e1 Medium |")
-print("|---------|------------|--------|----------|")
-print(f"| {total} | {critical} | {high} | {med} |")
-print("")
-filtered = [r for r in rows if r[3].strip().upper() in ('CRITICAL','HIGH','MEDIUM')]
-if filtered:
-    print("#### \u26a0\ufe0f Findings \u2014 Critical / High / Medium")
-    print("")
-    print("| Vulnerability | Severity | Resource | Description |")
-    print("|--------------|----------|----------|-------------|")
-    for r in filtered:
-        name  = r[0].strip()
-        sev   = r[3].strip()
-        fname = r[14].strip()
-        line  = r[16].strip()
-        desc  = r[10].strip()
-        if len(desc) > 120: desc = desc[:117] + '...'
-        print(f"| {name} | {sev} | {fname}:{line} | {desc} |")
-else:
-    print("\u2705 No CRITICAL / HIGH / MEDIUM findings.")
-PYEOF
+              PY=/tmp/kics_parse_$$.py
+              printf '%s\n' \
+                'import csv,os,sys' \
+                'f=os.environ.get("KICS_CSV","")' \
+                'rows=[r for r in csv.reader(open(f)) if r][1:]' \
+                'rows=[r for r in rows if len(r)>=17]' \
+                'sev=lambda r:r[3].strip().upper()' \
+                'total=len(rows)' \
+                'cri=sum(1 for r in rows if sev(r)=="CRITICAL")' \
+                'hi=sum(1 for r in rows if sev(r)=="HIGH")' \
+                'med=sum(1 for r in rows if sev(r)=="MEDIUM")' \
+                'print("### KICS Security Scan Results")' \
+                'print("")' \
+                'print("| Total | Critical | High | Medium |")' \
+                'print("|-------|----------|------|--------|")'  \
+                'print("| "+str(total)+" | "+str(cri)+" | "+str(hi)+" | "+str(med)+" |")' \
+                'print("")' \
+                'fil=[r for r in rows if sev(r) in ("CRITICAL","HIGH","MEDIUM")]' \
+                'print("#### Findings - Critical / High / Medium") if fil else print("No CRITICAL/HIGH/MEDIUM findings.")' \
+                'fil and [print("| Vulnerability | Severity | Resource | Description |")]' \
+                'fil and [print("|--------------|----------|----------|-------------|" )]' \
+                'exec("for r in fil:\n d=r[10][:117]+\x27...\x27 if len(r[10])>120 else r[10]\n print(\x27| \x27+r[0]+\x27 | \x27+r[3]+\x27 | \x27+r[14]+\x27:\x27+r[16]+\x27 | \x27+d+\x27 |\x27)")' \
+                > "$PY"
+              KICS_CSV="$REPORT_DIR/results.csv" python3 "$PY"
+              rm -f "$PY"
             fi
             echo ""
             echo "=== KICS scan complete ==="
@@ -169,49 +153,33 @@ PYEOF
               --output-path "$REPORT_DIR" \
               --ignore-on-exit results > /dev/null 2>&1
             if [ -f "$REPORT_DIR/results.csv" ]; then
-              KICS_CSV="$REPORT_DIR/results.csv" python3 - <<'PYEOF'
-import csv, sys, os
-filepath = os.environ['KICS_CSV']
-rows = []
-try:
-    with open(filepath, newline='', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        next(reader)  # skip header
-        for r in reader:
-            if len(r) >= 17:
-                rows.append(r)
-except Exception as e:
-    print(f"Error reading CSV: {e}"); sys.exit(0)
-
-total    = len(rows)
-critical = sum(1 for r in rows if r[3].strip().upper() == 'CRITICAL')
-high     = sum(1 for r in rows if r[3].strip().upper() == 'HIGH')
-med      = sum(1 for r in rows if r[3].strip().upper() == 'MEDIUM')
-low      = sum(1 for r in rows if r[3].strip().upper() == 'LOW')
-info     = sum(1 for r in rows if r[3].strip().upper() == 'INFO')
-print("### \U0001f510 KICS Security Scan Results")
-print("")
-print("| \U0001f4ca Total | \U0001f534 Critical | \U0001f7e0 High | \U0001f7e1 Medium | \U0001f535 Low | \u26aa Info |")
-print("|---------|------------|--------|----------|-------|------|")
-print(f"| {total} | {critical} | {high} | {med} | {low} | {info} |")
-print("")
-filtered = [r for r in rows if r[3].strip().upper() in ('CRITICAL','HIGH','MEDIUM')]
-if filtered:
-    print("#### \u26a0\ufe0f Findings \u2014 Critical / High / Medium")
-    print("")
-    print("| Vulnerability | Severity | Resource | Description |")
-    print("|--------------|----------|----------|-------------|")
-    for r in filtered:
-        name  = r[0].strip()
-        sev   = r[3].strip()
-        fname = r[14].strip()
-        line  = r[16].strip()
-        desc  = r[10].strip()
-        if len(desc) > 120: desc = desc[:117] + '...'
-        print(f"| {name} | {sev} | {fname}:{line} | {desc} |")
-else:
-    print("\u2705 No CRITICAL / HIGH / MEDIUM findings.")
-PYEOF
+              PY=/tmp/kics_parse_$$.py
+              printf '%s\n' \
+                'import csv,os,sys' \
+                'f=os.environ.get("KICS_CSV","")' \
+                'rows=[r for r in csv.reader(open(f)) if r][1:]' \
+                'rows=[r for r in rows if len(r)>=17]' \
+                'sev=lambda r:r[3].strip().upper()' \
+                'total=len(rows)' \
+                'cri=sum(1 for r in rows if sev(r)=="CRITICAL")' \
+                'hi=sum(1 for r in rows if sev(r)=="HIGH")' \
+                'med=sum(1 for r in rows if sev(r)=="MEDIUM")' \
+                'low=sum(1 for r in rows if sev(r)=="LOW")' \
+                'info=sum(1 for r in rows if sev(r)=="INFO")' \
+                'print("### KICS Security Scan Results")' \
+                'print("")' \
+                'print("| Total | Critical | High | Medium | Low | Info |")' \
+                'print("|-------|----------|------|--------|-----|------|")' \
+                'print("| "+str(total)+" | "+str(cri)+" | "+str(hi)+" | "+str(med)+" | "+str(low)+" | "+str(info)+" |")' \
+                'print("")' \
+                'fil=[r for r in rows if sev(r) in ("CRITICAL","HIGH","MEDIUM")]' \
+                'print("#### Findings - Critical / High / Medium") if fil else print("No CRITICAL/HIGH/MEDIUM findings.")' \
+                'fil and [print("| Vulnerability | Severity | Resource | Description |")]' \
+                'fil and [print("|--------------|----------|----------|-------------|" )]' \
+                'exec("for r in fil:\n d=r[10][:117]+\x27...\x27 if len(r[10])>120 else r[10]\n print(\x27| \x27+r[0]+\x27 | \x27+r[3]+\x27 | \x27+r[14]+\x27:\x27+r[16]+\x27 | \x27+d+\x27 |\x27)")' \
+                > "$PY"
+              KICS_CSV="$REPORT_DIR/results.csv" python3 "$PY"
+              rm -f "$PY"
             fi
             echo ""
             echo "=== KICS scan complete ==="
