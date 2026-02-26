@@ -1,17 +1,21 @@
+# =============================================================================
+# atlantis.yaml — Repo-level Atlantis configuration
+# =============================================================================
 version: 3
 
-# ---------------------------------------------------------------------------
-# Project definitions
-# Each project maps a directory to a named workflow.
-# apply_requirements ensures a human approves before Terraform applies.
-# ---------------------------------------------------------------------------
+# ─── PROJECTS ────────────────────────────────────────────────────────────────
+# Each project can be triggered individually from a PR comment.
+# Use `atlantis plan -p <name>` to target a specific project.
 projects:
+
+  # ── Main project: full scan + terraform plan + apply ─────────────────────
+  # Triggered automatically on PR push (autoplan) or with: atlantis plan
   - name: alantis-demo
     dir: .
-    workspace: default
-    workflow: validate-scan-plan
+    workspace: default              # default workspace = main state file
+    workflow: all-scans-plan        # runs all 3 scanners + init + plan
     apply_requirements:
-      - approved          # PR must be approved before atlantis apply
+      - approved                    # PR must be approved before atlantis apply
     autoplan:
       when_modified:
         - "*.tf"
@@ -19,62 +23,109 @@ projects:
         - "atlantis.yaml"
       enabled: true
 
-# ---------------------------------------------------------------------------
-# Workflow: validate-scan-plan
-#
-# Plan phase steps (executed in order):
-#   1. terraform fmt -check     → fail if code is not properly formatted
-#   2. terraform validate       → syntax + internal consistency check
-#   3. checkov (KICS-style)     → security & compliance scan
-#        --soft-fail keeps the output visible but does NOT block the plan.
-#        Remove --soft-fail to make Checkov failures block the plan.
-#   4. init                     → standard atlantis init step
-#   5. plan                     → standard atlantis plan step
-#
-# Apply phase steps:
-#   1. apply                    → standard atlantis apply step
-# ---------------------------------------------------------------------------
+  # ── KICS scan only ────────────────────────────────────────────────────────
+  # Trigger with: atlantis plan -p scan-kics
+  # This only runs KICS, no terraform plan is generated.
+  - name: scan-kics
+    dir: .
+    workspace: kics                 # separate workspace to avoid lock conflicts
+    workflow: kics-only
+    autoplan:
+      enabled: false                # never auto-trigger; only on explicit command
+
+  # ── tfsec scan only ───────────────────────────────────────────────────────
+  # Trigger with: atlantis plan -p scan-tfsec
+  - name: scan-tfsec
+    dir: .
+    workspace: tfsec
+    workflow: tfsec-only
+    autoplan:
+      enabled: false
+
+  # ── Checkov scan only ─────────────────────────────────────────────────────
+  # Trigger with: atlantis plan -p scan-checkov
+  - name: scan-checkov
+    dir: .
+    workspace: checkov
+    workflow: checkov-only
+    autoplan:
+      enabled: false
+
+# ─── WORKFLOWS ────────────────────────────────────────────────────────────────
 workflows:
-  validate-scan-plan:
+
+  # ── all-scans-plan: runs all 3 scanners then does init + plan ─────────────
+  all-scans-plan:
     plan:
       steps:
-        # ── Formatting check ────────────────────────────────────────────────
         - run: |
-            echo "=== [1/4] Terraform format check ==="
+            echo "=== [1/6] Terraform format check ==="
             terraform fmt -check -recursive .
             echo "Format check passed."
 
-        # ── Built-in validation ──────────────────────────────────────────────
         - run: |
-            echo "=== [2/4] Terraform validate ==="
+            echo "=== [2/6] Terraform validate ==="
             terraform validate
             echo "Validation passed."
 
-        # ── Checkov security scan ────────────────────────────────────────────
-        # Checkov scans all .tf files in the current directory.
-        # Key flags:
-        #   -d .            : scan current directory
-        #   --quiet         : suppress passing checks, show only failures
-        #   --compact       : condensed output (one line per finding)
-        #   --framework terraform : scan Terraform HCL only
-        #   --soft-fail     : exit 0 even when violations found (remove to block)
-        # Severity thresholds (uncomment ONE of the lines below):
-        #   --check CKV_AWS_*            : only run AWS checks
-        #   --severity HIGH              : only report HIGH+ severity
         - run: |
-            echo "=== [3/4] Checkov security scan ==="
-            checkov \
-              -d . \
-              --quiet \
-              --compact \
-              --framework terraform \
-              --soft-fail
+            echo "=== [3/6] KICS security scan ==="
+            kics scan \
+              -p . \
+              -q /app/assets/queries \
+              --no-progress \
+              --type Terraform \
+              --ignore-on-exit results
+            echo "KICS scan complete."
+
+        - run: |
+            echo "=== [4/6] tfsec security scan ==="
+            tfsec . --no-color --soft-fail
+            echo "tfsec scan complete."
+
+        - run: |
+            echo "=== [5/6] Checkov security scan ==="
+            checkov -d . --quiet --compact --framework terraform --soft-fail
             echo "Checkov scan complete."
 
-        # ── Terraform init + plan ────────────────────────────────────────────
-        - init
-        - plan
+        - init   # Step 6a: terraform init
+        - plan   # Step 6b: terraform plan (output posted as PR comment)
 
     apply:
       steps:
-        - apply
+        - apply  # runs terraform apply with the saved plan file
+
+  # ── kics-only: KICS scan only, no terraform plan ──────────────────────────
+  # Comment `atlantis plan -p scan-kics` on the PR to trigger.
+  kics-only:
+    plan:
+      steps:
+        - run: |
+            echo "=== KICS security scan ==="
+            kics scan \
+              -p . \
+              -q /app/assets/queries \
+              --no-progress \
+              --type Terraform \
+              --ignore-on-exit results
+            echo "KICS scan complete."
+
+  # ── tfsec-only: tfsec scan only, no terraform plan ────────────────────────
+  # Comment `atlantis plan -p scan-tfsec` on the PR to trigger.
+  tfsec-only:
+    plan:
+      steps:
+        - run: |
+            echo "=== tfsec security scan ==="
+            tfsec . --no-color --soft-fail
+            echo "tfsec scan complete."
+
+  # ── checkov-only: Checkov scan only, no terraform plan ────────────────────
+  # Comment `atlantis plan -p scan-checkov` on the PR to trigger.
+  checkov-only:
+    plan:
+      steps:
+        - run: |
+            echo "=== Checkov security scan ==="
+            checkov -d . --quiet --compact --framework terraform --soft-fail
+            echo "Checkov scan complete."
