@@ -74,34 +74,47 @@ workflows:
               --output-path "$REPORT_DIR" \
               --ignore-on-exit results > /dev/null 2>&1
             if [ -f "$REPORT_DIR/results.csv" ]; then
-              TOTAL=$(awk -F',' 'NR>1' "$REPORT_DIR/results.csv" | wc -l)
-              CRITICAL=$(awk -F',' 'NR>1 && toupper($4)=="CRITICAL"' "$REPORT_DIR/results.csv" | wc -l)
-              HIGH=$(awk -F',' 'NR>1 && toupper($4)=="HIGH"' "$REPORT_DIR/results.csv" | wc -l)
-              MED=$(awk -F',' 'NR>1 && toupper($4)=="MEDIUM"' "$REPORT_DIR/results.csv" | wc -l)
-              echo "### 🔐 KICS Security Scan Results"
-              echo ""
-              echo "| 📊 Total | 🔴 Critical | 🟠 High | 🟡 Medium |"
-              echo "|---------|------------|--------|----------|"
-              echo "| $TOTAL | $CRITICAL | $HIGH | $MED |"
-              echo ""
-              FILTERED=$(awk -F',' 'NR>1 && (toupper($4)=="CRITICAL" || toupper($4)=="HIGH" || toupper($4)=="MEDIUM")' "$REPORT_DIR/results.csv" | wc -l)
-              if [ "$FILTERED" -gt 0 ]; then
-                echo "#### ⚠️ Findings — Critical / High / Medium"
-                echo ""
-                echo "| Vulnerability | Severity | Resource | Description |"
-                echo "|--------------|----------|------------|-------------|"
-                awk -F',' 'NR>1 && (toupper($4)=="CRITICAL" || toupper($4)=="HIGH" || toupper($4)=="MEDIUM") {
-                  title=$1; sev=$4; file=$9; line=$10; desc=$7
-                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", title)
-                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", sev)
-                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", file)
-                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", line)
-                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", desc)
-                  printf "| %s | %s | %s:%s | %s |\n", title, sev, file, line, desc
-                }' "$REPORT_DIR/results.csv"
-              else
-                echo "✅ No CRITICAL / HIGH / MEDIUM findings."
-              fi
+              KICS_CSV="$REPORT_DIR/results.csv" python3 - <<'PYEOF'
+import csv, sys, os
+filepath = os.environ['KICS_CSV']
+rows = []
+try:
+    with open(filepath, newline='', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        next(reader)  # skip header
+        for r in reader:
+            if len(r) >= 17:
+                rows.append(r)
+except Exception as e:
+    print(f"Error reading CSV: {e}"); sys.exit(0)
+
+total = len(rows)
+critical = sum(1 for r in rows if r[3].strip().upper() == 'CRITICAL')
+high     = sum(1 for r in rows if r[3].strip().upper() == 'HIGH')
+med      = sum(1 for r in rows if r[3].strip().upper() == 'MEDIUM')
+print("### \U0001f510 KICS Security Scan Results")
+print("")
+print("| \U0001f4ca Total | \U0001f534 Critical | \U0001f7e0 High | \U0001f7e1 Medium |")
+print("|---------|------------|--------|----------|")
+print(f"| {total} | {critical} | {high} | {med} |")
+print("")
+filtered = [r for r in rows if r[3].strip().upper() in ('CRITICAL','HIGH','MEDIUM')]
+if filtered:
+    print("#### \u26a0\ufe0f Findings \u2014 Critical / High / Medium")
+    print("")
+    print("| Vulnerability | Severity | Resource | Description |")
+    print("|--------------|----------|----------|-------------|")
+    for r in filtered:
+        name  = r[0].strip()
+        sev   = r[3].strip()
+        fname = r[14].strip()
+        line  = r[16].strip()
+        desc  = r[10].strip()
+        if len(desc) > 120: desc = desc[:117] + '...'
+        print(f"| {name} | {sev} | {fname}:{line} | {desc} |")
+else:
+    print("\u2705 No CRITICAL / HIGH / MEDIUM findings.")
+PYEOF
             fi
             echo ""
             echo "=== KICS scan complete ==="
@@ -156,36 +169,49 @@ workflows:
               --output-path "$REPORT_DIR" \
               --ignore-on-exit results > /dev/null 2>&1
             if [ -f "$REPORT_DIR/results.csv" ]; then
-              TOTAL=$(awk -F',' 'NR>1' "$REPORT_DIR/results.csv" | wc -l)
-              CRITICAL=$(awk -F',' 'NR>1 && toupper($4)=="CRITICAL"' "$REPORT_DIR/results.csv" | wc -l)
-              HIGH=$(awk -F',' 'NR>1 && toupper($4)=="HIGH"' "$REPORT_DIR/results.csv" | wc -l)
-              MED=$(awk -F',' 'NR>1 && toupper($4)=="MEDIUM"' "$REPORT_DIR/results.csv" | wc -l)
-              LOW=$(awk -F',' 'NR>1 && toupper($4)=="LOW"' "$REPORT_DIR/results.csv" | wc -l)
-              INFO=$(awk -F',' 'NR>1 && toupper($4)=="INFO"' "$REPORT_DIR/results.csv" | wc -l)
-              echo "### 🔐 KICS Security Scan Results"
-              echo ""
-              echo "| 📊 Total | 🔴 Critical | 🟠 High | 🟡 Medium | 🔵 Low | ⚪ Info |"
-              echo "|---------|------------|--------|----------|-------|------|"
-              echo "| $TOTAL | $CRITICAL | $HIGH | $MED | $LOW | $INFO |"
-              echo ""
-              FILTERED=$(awk -F',' 'NR>1 && (toupper($4)=="CRITICAL" || toupper($4)=="HIGH" || toupper($4)=="MEDIUM")' "$REPORT_DIR/results.csv" | wc -l)
-              if [ "$FILTERED" -gt 0 ]; then
-                echo "#### ⚠️ Findings — Critical / High / Medium"
-                echo ""
-                echo "| Vulnerability | Severity | Resource | Description |"
-                echo "|--------------|----------|------------|-------------|"
-                awk -F',' 'NR>1 && (toupper($4)=="CRITICAL" || toupper($4)=="HIGH" || toupper($4)=="MEDIUM") {
-                  title=$1; sev=$4; file=$9; line=$10; desc=$7
-                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", title)
-                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", sev)
-                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", file)
-                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", line)
-                  gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", desc)
-                  printf "| %s | %s | %s:%s | %s |\n", title, sev, file, line, desc
-                }' "$REPORT_DIR/results.csv"
-              else
-                echo "✅ No CRITICAL / HIGH / MEDIUM findings."
-              fi
+              KICS_CSV="$REPORT_DIR/results.csv" python3 - <<'PYEOF'
+import csv, sys, os
+filepath = os.environ['KICS_CSV']
+rows = []
+try:
+    with open(filepath, newline='', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        next(reader)  # skip header
+        for r in reader:
+            if len(r) >= 17:
+                rows.append(r)
+except Exception as e:
+    print(f"Error reading CSV: {e}"); sys.exit(0)
+
+total    = len(rows)
+critical = sum(1 for r in rows if r[3].strip().upper() == 'CRITICAL')
+high     = sum(1 for r in rows if r[3].strip().upper() == 'HIGH')
+med      = sum(1 for r in rows if r[3].strip().upper() == 'MEDIUM')
+low      = sum(1 for r in rows if r[3].strip().upper() == 'LOW')
+info     = sum(1 for r in rows if r[3].strip().upper() == 'INFO')
+print("### \U0001f510 KICS Security Scan Results")
+print("")
+print("| \U0001f4ca Total | \U0001f534 Critical | \U0001f7e0 High | \U0001f7e1 Medium | \U0001f535 Low | \u26aa Info |")
+print("|---------|------------|--------|----------|-------|------|")
+print(f"| {total} | {critical} | {high} | {med} | {low} | {info} |")
+print("")
+filtered = [r for r in rows if r[3].strip().upper() in ('CRITICAL','HIGH','MEDIUM')]
+if filtered:
+    print("#### \u26a0\ufe0f Findings \u2014 Critical / High / Medium")
+    print("")
+    print("| Vulnerability | Severity | Resource | Description |")
+    print("|--------------|----------|----------|-------------|")
+    for r in filtered:
+        name  = r[0].strip()
+        sev   = r[3].strip()
+        fname = r[14].strip()
+        line  = r[16].strip()
+        desc  = r[10].strip()
+        if len(desc) > 120: desc = desc[:117] + '...'
+        print(f"| {name} | {sev} | {fname}:{line} | {desc} |")
+else:
+    print("\u2705 No CRITICAL / HIGH / MEDIUM findings.")
+PYEOF
             fi
             echo ""
             echo "=== KICS scan complete ==="
